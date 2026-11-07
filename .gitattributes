@@ -1,0 +1,10 @@
+* text=auto eol=lf
+
+# PowerShell 脚本：保持 LF，BOM 由文件自身携带
+*.ps1 text eol=lf
+*.psd1 text eol=lf
+*.vbs text eol=lf
+
+# 二进制
+*.ico binary
+*.png binary

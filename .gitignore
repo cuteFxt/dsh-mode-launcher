@@ -1,0 +1,20 @@
+# 运行日志
+dsh-mode.log
+*.log
+
+# 用户本地配置（不跟着仓库走）
+dsh-mode.config.psd1
+
+# 备份文件
+*.bak-*
+*.bak
+
+# 系统垃圾
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
