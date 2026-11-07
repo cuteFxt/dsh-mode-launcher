@@ -9,6 +9,9 @@ dsh-mode.config.psd1
 *.bak-*
 *.bak
 
+# 本地辅助脚本
+push-when-ready.ps1
+
 # 系统垃圾
 Thumbs.db
 desktop.ini
@@ -18,4 +21,3 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
-push-when-ready.ps1
