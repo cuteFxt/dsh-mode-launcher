@@ -431,6 +431,9 @@ function Show-Editor {
     Show-Swatches $m.color
 
     $disabled = @($m.disabled | Where-Object { $_ })
+    # 自动纳入的插件：勾选状态以外，还要在界面上标出来，否则用户看不出"为什么它被关了"。
+    $autoPkgs = @(Get-ModeAutoPackages -Mode $m -Catalog $script:Catalog)
+    $script:AutoNow = $autoPkgs
     $ui.PluginHost.Children.Clear()
 
     # 按分组渲染
@@ -458,7 +461,8 @@ function Show-Editor {
         $wrap = New-Object System.Windows.Controls.StackPanel
         foreach ($pkg in $names) {
             $totalAll++
-            $on = ($disabled -notcontains $pkg)
+            $isAuto = ($autoPkgs -contains $pkg)
+            $on = ($disabled -notcontains $pkg) -and -not $isAuto
             if ($on) { $totalOn++ }
             $desc = ''
             try { $desc = [string]$script:Catalog.packages.$pkg.description } catch { }
@@ -482,9 +486,10 @@ function Show-Editor {
             [void]$line.ColumnDefinitions.Add($c1)
 
             $nm = New-Object System.Windows.Controls.TextBlock
-            $nm.Text = $pkg
+            $nm.Text = $(if ($isAuto) { "$pkg　自动" } else { $pkg })
             $nm.FontSize = '12.5'
             $nm.VerticalAlignment = 'Center'
+            if ($isAuto) { $nm.Foreground = New-Brush '#F5A524' }
             [System.Windows.Controls.Grid]::SetColumn($nm, 0)
             [void]$line.Children.Add($nm)
 
@@ -522,13 +527,26 @@ function Read-Editor {
     $m.workspace = $ui.TxtWork.Text.Trim()
     $m.pin = ($ui.ChkPin.IsChecked -eq $true)
     $off = @()
+    $autoNow = @($script:AutoNow)
+    $except = New-Object System.Collections.Generic.List[string]
+    foreach ($x in @($m.autoExcept | Where-Object { $_ })) { [void]$except.Add($x) }
+
     foreach ($wrap in $ui.PluginHost.Children) {
         if ($wrap -isnot [System.Windows.Controls.Panel]) { continue }
         foreach ($cb in $wrap.Children) {
-            if ($cb.IsChecked -ne $true) { $off += [string]$cb.Tag }
+            $pkg = [string]$cb.Tag
+            $checked = ($cb.IsChecked -eq $true)
+            if ($autoNow -contains $pkg) {
+                # 自动纳入的包：勾上 = 明确要开（记进 autoExcept 抵消规则），不勾 = 交给规则管
+                if ($checked -and -not $except.Contains($pkg)) { [void]$except.Add($pkg) }
+                elseif (-not $checked) { [void]$except.Remove($pkg) }
+                continue
+            }
+            if (-not $checked) { $off += $pkg }
         }
     }
     $m.disabled = @($off)
+    $m.autoExcept = @($except.ToArray())
 }
 
 function Set-Status([string]$text, [string]$color = '#7C8798') {
@@ -743,16 +761,18 @@ if ($SelfTest) {
             $log.Add('WARN: 读回的禁用数与配置不一致')
         }
 
-        # 全关 → 应变成 19 个都 disabled
+        # 全关 → 所有「非自动」包都进 disabled；自动纳入的包由规则接管，不写进白名单。
+        # 但它们会被记进 autoExcept 的反面（不勾 = 交给规则），所以这里只校验非自动包。
+        $autoCount = @($script:AutoNow).Count
         foreach ($wrap in $ui.PluginHost.Children) {
             if ($wrap -is [System.Windows.Controls.Panel]) { foreach ($cb in $wrap.Children) { $cb.IsChecked = $false } }
         }
         Read-Editor
         $allOff = @((Get-CurrentMode).disabled).Count
-        $log.Add(("全关后 disabled 数={0}" -f $allOff))
-        if ($allOff -ne $boxes) { $log.Add('FAIL: 全关数量不符'); $ok = $false }
+        $log.Add(("全关后 disabled 数={0}（非自动包 {1} 个，自动 {2} 个）" -f $allOff, ($boxes - $autoCount), $autoCount))
+        if ($allOff -ne ($boxes - $autoCount)) { $log.Add('FAIL: 全关数量不符'); $ok = $false }
 
-        # 全开 → 0
+        # 全开 → 0（自动包被勾上时会进 autoExcept 抵消规则，所以 disabled 也应为 0）
         foreach ($wrap in $ui.PluginHost.Children) {
             if ($wrap -is [System.Windows.Controls.Panel]) { foreach ($cb in $wrap.Children) { $cb.IsChecked = $true } }
         }

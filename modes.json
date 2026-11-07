@@ -12,6 +12,9 @@
       "builtin": true,
       "pin": true,
       "disabled": [],
+      "autoGroups": [],
+      "autoMatch": [],
+      "autoExcept": [],
       "requireBundles": ["dsh-ths-holdings"],
       "removeBundles": []
     },
@@ -25,6 +28,9 @@
       "builtin": true,
       "pin": true,
       "disabled": ["dsh-astock-research", "dsh-live-data", "dsh-plugin-stock-x", "dsh-stock-analysis", "dsh-stock-jt", "dsh-ths-holdings"],
+      "autoGroups": ["股票"],
+      "autoMatch": ["*股票*", "*A股*", "*行情*", "*持仓*", "*投研*", "*账本*", "*证券*", "*选股*", "*K线*"],
+      "autoExcept": [],
       "requireBundles": [],
       "removeBundles": ["dsh-ths-holdings"]
     },
@@ -38,6 +44,9 @@
       "builtin": true,
       "pin": false,
       "disabled": ["dsh-plugin-stock-x", "dsh-stock-jt", "dsh-live-data", "dsh-astock-research", "dsh-stock-analysis", "dsh-ths-holdings", "dsh-skin-market", "open-sea-skin", "dsh-bloub-mood", "dsh-whale-widget"],
+      "autoGroups": ["股票", "日常"],
+      "autoMatch": ["*股票*", "*A股*", "*行情*", "*持仓*", "*投研*", "*账本*", "*证券*", "*选股*", "*K线*", "*皮肤*", "*主题*", "*挂件*", "*壁纸*", "*mood*", "*whale*"],
+      "autoExcept": [],
       "requireBundles": [],
       "removeBundles": ["dsh-ths-holdings"]
     },
@@ -51,6 +60,9 @@
       "builtin": true,
       "pin": false,
       "disabled": ["dsh-plugin-stock-x", "dsh-stock-jt", "dsh-live-data", "dsh-astock-research", "dsh-stock-analysis", "dsh-ths-holdings", "dsh-bloub-mood", "dsh-whale-widget"],
+      "autoGroups": ["股票", "日常"],
+      "autoMatch": ["*股票*", "*A股*", "*行情*", "*持仓*", "*投研*", "*账本*", "*证券*", "*选股*", "*K线*", "*皮肤*", "*主题*", "*挂件*", "*壁纸*", "*mood*", "*whale*"],
+      "autoExcept": [],
       "requireBundles": [],
       "removeBundles": ["dsh-ths-holdings"]
     },
@@ -63,7 +75,10 @@
       "note": "只剩会话本身：关股票、关装饰、关费用条与图片查看器。",
       "builtin": true,
       "pin": false,
-      "disabled": ["dsh-plugin-stock-x", "dsh-stock-jt", "dsh-live-data", "dsh-astock-research", "dsh-stock-analysis", "dsh-ths-holdings", "dsh-skin-market", "open-sea-skin", "dsh-bloub-mood", "dsh-whale-widget", "dsh-cost-meter", "dsh-image-viewer"],
+      "disabled": ["dsh-astock-research", "dsh-live-data", "dsh-plugin-stock-x", "dsh-stock-analysis", "dsh-stock-jt", "dsh-ths-holdings", "dsh-skin-market", "dsh-whale-widget", "dsh-cost-meter", "dsh-image-viewer", "dsh-bloub-mood", "open-sea-skin"],
+      "autoGroups": ["股票", "日常"],
+      "autoMatch": ["*股票*", "*A股*", "*行情*", "*持仓*", "*投研*", "*账本*", "*证券*", "*选股*", "*K线*", "*皮肤*", "*主题*", "*挂件*", "*壁纸*", "*mood*", "*whale*"],
+      "autoExcept": [],
       "requireBundles": [],
       "removeBundles": ["dsh-ths-holdings"]
     }

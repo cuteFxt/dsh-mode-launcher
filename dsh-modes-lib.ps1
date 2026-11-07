@@ -186,7 +186,9 @@ function Get-BundleNames {
         if ($Lines[$i] -match '^\s*\]\s*,?\s*$') { break }
         if ($Lines[$i] -match '^\s*"([^"]+)"\s*,?\s*$') { $names.Add($Matches[1]) }
     }
-    return , $names.ToArray()
+    # 注意：不要写成 return , $names.ToArray() —— 那会再包一层，
+    # 调用方 @(Get-BundleNames ...).Count 会永远得到 1。
+    return $names.ToArray()
 }
 
 function Set-BundlePresent {
@@ -232,17 +234,12 @@ function Set-BundlePresent {
 # 结果缓存到 catalog.json（默认 12 小时内复用，-Refresh 强制重建）。
 # ---------------------------------------------------------------------------
 function Get-DshCatalog {
-    param([switch]$Refresh, [int]$MaxAgeHours = 12)
+    param([switch]$Refresh, [int]$MaxAgeHours = 0)
 
-    if (-not $Refresh -and (Test-Path -LiteralPath $script:CatalogPath)) {
-        try {
-            $age = (Get-Date) - (Get-Item -LiteralPath $script:CatalogPath).LastWriteTime
-            if ($age.TotalHours -lt $MaxAgeHours) {
-                return (Read-Utf8Text $script:CatalogPath) | ConvertFrom-Json
-            }
-        }
-        catch { }
-    }
+    # 每次现扫。实测全量扫描 19 个包约 440ms，没必要缓存 —— 缓存只会让
+    # 刚装的插件在面板里"看不见"，那是最容易踩的坑。
+    # 这里仍保留一个同进程内的 memo，避免同一次运行里重复扫两遍。
+    if (-not $Refresh -and $script:CatalogMemo) { return $script:CatalogMemo }
 
     # 插件包扫描根：优先当前 profile，其次是默认 desktop profile
     # （调试时用 DSH_PROFILE_DIR 指向临时目录，插件仍从真实 profile 读）
@@ -298,7 +295,8 @@ function Get-DshCatalog {
         packages    = $packages
     }
     try { Write-Utf8Atomic $script:CatalogPath ($result | ConvertTo-Json -Depth 8) } catch { }
-    return ($result | ConvertTo-Json -Depth 8 | ConvertFrom-Json)
+    $script:CatalogMemo = ($result | ConvertTo-Json -Depth 8 | ConvertFrom-Json)
+    return $script:CatalogMemo
 }
 
 # ---------------------------------------------------------------------------
@@ -321,6 +319,15 @@ function Get-ModeConfig {
         }
         if ($m.PSObject.Properties.Name -notcontains 'builtin') {
             $m | Add-Member -NotePropertyName 'builtin' -NotePropertyValue $false -Force
+        }
+        if ($m.PSObject.Properties.Name -notcontains 'autoGroups') {
+            $m | Add-Member -NotePropertyName 'autoGroups' -NotePropertyValue @() -Force
+        }
+        if ($m.PSObject.Properties.Name -notcontains 'autoMatch') {
+            $m | Add-Member -NotePropertyName 'autoMatch' -NotePropertyValue @() -Force
+        }
+        if ($m.PSObject.Properties.Name -notcontains 'autoExcept') {
+            $m | Add-Member -NotePropertyName 'autoExcept' -NotePropertyValue @() -Force
         }
     }
     return $obj
@@ -370,6 +377,9 @@ function Format-ModeJson {
         [void]$sb.Append('      "builtin": ' + $(if ($m.builtin) { 'true' } else { 'false' }) + ',' + $nl)
         [void]$sb.Append('      "pin": ' + $(if ($m.pin) { 'true' } else { 'false' }) + ',' + $nl)
         [void]$sb.Append('      "disabled": ' + (Arr $m.disabled) + ',' + $nl)
+        [void]$sb.Append('      "autoGroups": ' + (Arr $m.autoGroups) + ',' + $nl)
+        [void]$sb.Append('      "autoMatch": ' + (Arr $m.autoMatch) + ',' + $nl)
+        [void]$sb.Append('      "autoExcept": ' + (Arr $m.autoExcept) + ',' + $nl)
         [void]$sb.Append('      "requireBundles": ' + (Arr $m.requireBundles) + ',' + $nl)
         [void]$sb.Append('      "removeBundles": ' + (Arr $m.removeBundles) + $nl)
         [void]$sb.Append('    }' + $comma + $nl)
@@ -431,6 +441,9 @@ function Add-ModeToConfig {
         builtin        = $false
         pin            = $true
         disabled       = @($Disabled | Where-Object { $_ })
+        autoGroups     = @()
+        autoMatch      = @()
+        autoExcept     = @()
         requireBundles = @()
         removeBundles  = @()
     }
@@ -664,6 +677,64 @@ function Write-DshLog {
 }
 
 # ---------------------------------------------------------------------------
+# 自动纳入（autoGroups / autoMatch）
+#   模式可以声明"凡是属于这些分组 / 匹配这些通配符的插件，都算在这个模式里"。
+#   这样新装的插件不需要手工勾进每个模式 —— 只要它归了组或名字对得上。
+# ---------------------------------------------------------------------------
+function Test-ModeGlob {
+    param([string]$Pattern, [string]$Text)
+    if (-not $Pattern -or -not $Text) { return $false }
+    $rx = [regex]::Escape($Pattern).Replace('\*', '.*').Replace('\?', '.')
+    return ($Text -match ('^' + $rx + '$'))
+}
+
+function Get-ModeAutoPackages {
+    param($Mode, $Catalog)
+
+    $hit = New-StringList
+    if (-not $Catalog) { return @() }
+
+    # --- 1. 按分组：autoGroups = ["股票"] ---
+    $groups = @($Mode.autoGroups | Where-Object { $_ })
+    if ($groups.Count -gt 0) {
+        $map = Get-PluginGroups
+        foreach ($g in $groups) {
+            if (-not $map.Contains($g)) { continue }
+            foreach ($pkg in @($map[$g])) {
+                if ($pkg -and -not $hit.Contains($pkg)) { [void]$hit.Add($pkg) }
+            }
+        }
+    }
+
+    # --- 2. 按包名 / 描述通配：autoMatch = ["*stock*", "dsh-*"] ---
+    $patterns = @($Mode.autoMatch | Where-Object { $_ })
+    if ($patterns.Count -gt 0) {
+        foreach ($p in $Catalog.packages.PSObject.Properties) {
+            $name = $p.Name
+            $desc = ''
+            try { $desc = [string]$p.Value.description } catch { }
+            $matched = $false
+            foreach ($pat in $patterns) {
+                if ((Test-ModeGlob $pat $name) -or (Test-ModeGlob $pat $desc)) { $matched = $true; break }
+            }
+            if ($matched -and -not $hit.Contains($name)) { [void]$hit.Add($name) }
+        }
+    }
+
+    # --- 3. 例外：autoExcept = ["dsh-market"] —— 被自动规则误伤的包可以在这里排除 ---
+    $except = @($Mode.autoExcept | Where-Object { $_ })
+    if ($except.Count -gt 0) {
+        $kept = New-StringList
+        foreach ($pkg in @($hit.ToArray())) {
+            if ($except -notcontains $pkg) { [void]$kept.Add($pkg) }
+        }
+        return @($kept.ToArray())
+    }
+
+    return @($hit.ToArray())
+}
+
+# ---------------------------------------------------------------------------
 # 计算某个模式要关闭的「行 id」清单
 # ---------------------------------------------------------------------------
 function Get-ModeRows {
@@ -671,7 +742,15 @@ function Get-ModeRows {
 
     $rows = New-StringList
     $skipped = New-StringList
-    foreach ($pkg in @($Mode.disabled)) {
+    $auto = @(Get-ModeAutoPackages -Mode $Mode -Catalog $Catalog)
+    $wanted = @(@($Mode.disabled) + $auto | Where-Object { $_ } | Select-Object -Unique)
+    # autoExcept 是「这个模式里我要显式开」的例外，必须能盖过显式 disabled 名单，
+    # 否则用户在面板里勾上它，保存后仍然会被关掉。
+    $except = @($Mode.autoExcept | Where-Object { $_ })
+    if ($except.Count -gt 0) {
+        $wanted = @($wanted | Where-Object { $except -notcontains $_ })
+    }
+    foreach ($pkg in $wanted) {
         if (-not $pkg) { continue }
         $entry = $null
         if ($Catalog.packages.PSObject.Properties.Name -contains $pkg) { $entry = $Catalog.packages.$pkg }
@@ -705,7 +784,17 @@ function Apply-DshMode {
     if (-not (Test-Path -LiteralPath $script:Manifest))   { throw "找不到 profile 清单：$($script:Manifest)" }
 
     $state = Get-ModeState
-    $desiredDisabled = @($mode.disabled | Where-Object { $_ })
+    # 手动勾的 + 自动纳入的，合成这个模式真正要关掉的包名集合
+    # autoExcept 里的包要在这里剔除，否则它们会被写进 .dsh-market 的 disabled 列表，
+    # 而 Get-ModeRows 已经把同一批包排除了 —— 两边不一致会让 dshmarket 面板显示错乱。
+    $desiredDisabled = @(
+        @($mode.disabled) + @(Get-ModeAutoPackages -Mode $mode -Catalog $Catalog) |
+            Where-Object { $_ } | Select-Object -Unique
+    )
+    $exceptList = @($mode.autoExcept | Where-Object { $_ })
+    if ($exceptList.Count -gt 0) {
+        $desiredDisabled = @($desiredDisabled | Where-Object { $exceptList -notcontains $_ })
+    }
     $calc = Get-ModeRows -Mode $mode -Catalog $Catalog
 
     $origPatch = Read-Utf8 $script:PatchPath
