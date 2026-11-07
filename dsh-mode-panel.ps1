@@ -554,6 +554,13 @@ function Set-Status([string]$text, [string]$color = '#7C8798') {
     $ui.Status.Foreground = New-Brush $color
 }
 
+# PS 5.1 的坑：在 .GetNewClosure() 的代码块里写 $script:X = ... 只会改到闭包自己的私有
+# 作用域，文件级变量毫无变化，且不报错。所以事件处理器一律走下面这几个 setter，
+# 别在闭包体内直接给 $script: 变量赋值。
+function Set-PanelConfig { param($Config) $script:Config = $Config }
+function Set-PanelCurrent { param([string]$Id) $script:CurrentId = $Id }
+function Set-PanelCatalog { param($Catalog) $script:Catalog = $Catalog }
+
 # ---------------------------------------------------------------------------
 # 按钮事件
 # ---------------------------------------------------------------------------
@@ -588,7 +595,7 @@ $ui.BtnSave.Add_Click({
     try {
         Read-Editor
         Save-ModeConfig $script:Config
-        $script:Config = Get-ModeConfig
+        Set-PanelConfig (Get-ModeConfig)
         $sync = Sync-DesktopShortcuts -Config $script:Config
         Show-ModeList
         Show-Editor
@@ -604,13 +611,13 @@ $ui.BtnApply.Add_Click({
     try {
         Read-Editor
         Save-ModeConfig $script:Config
-        $script:Config = Get-ModeConfig
+        Set-PanelConfig (Get-ModeConfig)
         Set-Status '正在应用…' '#F5A524'
         $ui.BtnApply.IsEnabled = $false
         $res = Apply-DshMode -ModeId $script:CurrentId -Catalog $script:Catalog
         $sync = Sync-DesktopShortcuts -Config $script:Config
         $null = Start-DshApp
-        $script:Config = Get-ModeConfig
+        Set-PanelConfig (Get-ModeConfig)
         Show-ModeList
         Show-Editor
         Set-Status ('已应用「{0}」，DSH 会热切生效' -f $res.Mode.name) '#30A46C'
@@ -664,22 +671,31 @@ $ui.BtnNew.Add_Click({
         [void]$sp.Children.Add($btns)
         $dlg.Content = $sp
 
-        $script:newName = ''
-        $ok.Add_Click({ $script:newName = $tb.Text; $dlg.Close() }.GetNewClosure())
-        $cancel.Add_Click({ $script:newName = ''; $dlg.Close() }.GetNewClosure())
-        $tb.Add_KeyDown({ if ($_.Key -eq 'Enter') { $script:newName = $tb.Text; $dlg.Close() } }.GetNewClosure())
+        # 用 hashtable 当容器接收输入：闭包写不了 $script: 变量，但能改对象的属性。
+        $box = @{ name = '' }
+        $dialog = $dlg
+        $ok.Add_Click({
+            $box.name = $tb.Text
+            $dialog.Close()
+        }.GetNewClosure())
+        $cancel.Add_Click({ $dialog.Close() }.GetNewClosure())
+        $tb.Add_KeyDown({
+            param($s, $e)
+            if ($e.Key -eq 'Enter') { $box.name = $tb.Text; $dialog.Close() }
+        }.GetNewClosure())
+        $tb.Add_Loaded({ param($s, $e) $s.Focus() | Out-Null }.GetNewClosure())
         $null = $dlg.ShowDialog()
 
-        $name = ($script:newName + '').Trim()
+        $name = (($box.name + '') -replace '\s+', ' ').Trim()
         if (-not $name) { Set-Status '已取消' '#7C8798'; return }
         $pick = $ACCENTS[(@($script:Config.modes).Count) % $ACCENTS.Count]
         $m = Add-ModeToConfig -Config $script:Config -Name $name -Color $pick -Workspace '' -Note '' -Disabled @()
         Save-ModeConfig $script:Config
-        $script:Config = Get-ModeConfig
-        $script:CurrentId = $m.id
+        Set-PanelConfig (Get-ModeConfig)
+        Set-PanelCurrent $m.id
         Show-ModeList
         Show-Editor
-        Set-Status ('已新建「{0}」' -f $name) '#30A46C'
+        Set-Status ('已新建「{0}」，勾掉不要的插件后点保存' -f $name) '#30A46C'
     }
     catch { Set-Status ('新建失败：' + $_.Exception.Message) '#E5484D' }
 }.GetNewClosure())
@@ -694,8 +710,8 @@ $ui.BtnDelete.Add_Click({
         if ($ans -ne 'Yes') { return }
         $null = Remove-ModeFromConfig -Config $script:Config -Id $m.id
         Save-ModeConfig $script:Config
-        $script:Config = Get-ModeConfig
-        $script:CurrentId = $script:Config.modes[0].id
+        Set-PanelConfig (Get-ModeConfig)
+        Set-PanelCurrent $script:Config.modes[0].id
         Show-ModeList
         Show-Editor
         Set-Status ('已删除「{0}」' -f $m.name) '#F5A524'
@@ -705,7 +721,7 @@ $ui.BtnDelete.Add_Click({
 
 $ui.BtnReload.Add_Click({
     try {
-        $script:Catalog = Get-DshCatalog -Refresh
+        Set-PanelCatalog (Get-DshCatalog -Refresh)
         Show-ModeList
         Show-Editor
         Set-Status ('已重新扫描：{0} 个插件包' -f @($script:Catalog.packages.PSObject.Properties).Count) '#30A46C'
