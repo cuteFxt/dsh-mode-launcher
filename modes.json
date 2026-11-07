@@ -1,0 +1,71 @@
+{
+  "version": 2,
+  "active": "stock",
+  "modes": [
+    {
+      "id": "stock",
+      "name": "股票",
+      "color": "#E5484D",
+      "glyph": "股",
+      "workspace": "D:\\deepseek\\工作区\\股票",
+      "note": "全部股票插件开启：盯盘、投研、账本。",
+      "builtin": true,
+      "pin": true,
+      "disabled": [],
+      "requireBundles": ["dsh-ths-holdings"],
+      "removeBundles": []
+    },
+    {
+      "id": "study",
+      "name": "学习",
+      "color": "#4C9AFF",
+      "glyph": "书",
+      "workspace": "D:\\deepseek\\工作区\\学业",
+      "note": "关掉全部股票插件，其余照常。",
+      "builtin": true,
+      "pin": true,
+      "disabled": ["dsh-astock-research", "dsh-live-data", "dsh-plugin-stock-x", "dsh-stock-analysis", "dsh-stock-jt", "dsh-ths-holdings"],
+      "requireBundles": [],
+      "removeBundles": ["dsh-ths-holdings"]
+    },
+    {
+      "id": "focus",
+      "name": "专注",
+      "color": "#30A46C",
+      "glyph": "焦",
+      "workspace": "D:\\deepseek\\工作区\\学业",
+      "note": "学习 + 关掉皮肤、挂件这些装饰。",
+      "builtin": true,
+      "pin": false,
+      "disabled": ["dsh-plugin-stock-x", "dsh-stock-jt", "dsh-live-data", "dsh-astock-research", "dsh-stock-analysis", "dsh-ths-holdings", "dsh-skin-market", "open-sea-skin", "dsh-bloub-mood", "dsh-whale-widget"],
+      "requireBundles": [],
+      "removeBundles": ["dsh-ths-holdings"]
+    },
+    {
+      "id": "coding",
+      "name": "编程",
+      "color": "#F5A524",
+      "glyph": "码",
+      "workspace": "D:\\deepseek\\工作区\\代码",
+      "note": "关股票、关挂件，保留文件树与工具管理。",
+      "builtin": true,
+      "pin": false,
+      "disabled": ["dsh-plugin-stock-x", "dsh-stock-jt", "dsh-live-data", "dsh-astock-research", "dsh-stock-analysis", "dsh-ths-holdings", "dsh-bloub-mood", "dsh-whale-widget"],
+      "requireBundles": [],
+      "removeBundles": ["dsh-ths-holdings"]
+    },
+    {
+      "id": "minimal",
+      "name": "极简",
+      "color": "#8E4EC6",
+      "glyph": "简",
+      "workspace": "D:\\deepseek\\工作区",
+      "note": "只剩会话本身：关股票、关装饰、关费用条与图片查看器。",
+      "builtin": true,
+      "pin": false,
+      "disabled": ["dsh-plugin-stock-x", "dsh-stock-jt", "dsh-live-data", "dsh-astock-research", "dsh-stock-analysis", "dsh-ths-holdings", "dsh-skin-market", "open-sea-skin", "dsh-bloub-mood", "dsh-whale-widget", "dsh-cost-meter", "dsh-image-viewer"],
+      "requireBundles": [],
+      "removeBundles": ["dsh-ths-holdings"]
+    }
+  ]
+}

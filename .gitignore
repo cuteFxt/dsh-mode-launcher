@@ -5,12 +5,20 @@ dsh-mode.log
 # 用户本地配置（不跟着仓库走）
 dsh-mode.config.psd1
 
+# 本地生成（首次运行自动重建）
+catalog.json
+modes.state.json
+modes.json.bak-*
+
 # 备份文件
 *.bak-*
 *.bak
 
 # 本地辅助脚本
 push-when-ready.ps1
+
+# 截图 / 调试产物
+panel-shot*.png
 
 # 系统垃圾
 Thumbs.db

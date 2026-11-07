@@ -219,6 +219,63 @@ function Draw-Study {
 }
 
 # ---------------------------------------------------------------------------
+# 面板：2×2 模式宫格
+# ---------------------------------------------------------------------------
+function Draw-Panel {
+    param([System.Drawing.Graphics]$G, [single]$S)
+
+    # 底板（与另两个图标同一套骨架）
+    $plate = New-RoundedPath 0 0 $S $S ($S * 0.22)
+    $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+        (New-Pt 0 0), (New-Pt $S $S),
+        (New-Color '#2C3346'), (New-Color '#0B0E14'))
+    $G.FillPath($brush, $plate)
+    $brush.Dispose()
+
+    if ($S -ge 48) {
+        $glow = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+            (New-Pt 0 0), (New-Pt 0 $S),
+            ([System.Drawing.Color]::FromArgb(40, 255, 255, 255)),
+            ([System.Drawing.Color]::FromArgb(0, 255, 255, 255)))
+        $g2 = New-RoundedPath 0 0 $S $S ($S * 0.22)
+        $G.FillPath($glow, $g2)
+        $glow.Dispose(); $g2.Dispose()
+    }
+
+    $small = $S -le 32
+
+    # 四个模式方块：左上红、右上蓝、左下绿、右下紫
+    $cols = @(
+        @{ X = 0.215; Y = 0.215; C = '#E5484D' }
+        @{ X = 0.555; Y = 0.215; C = '#4C9AFF' }
+        @{ X = 0.215; Y = 0.555; C = '#30A46C' }
+        @{ X = 0.555; Y = 0.555; C = '#8E4EC6' }
+    )
+    $side = if ($small) { 0.290 } else { 0.270 }
+    $radius = $side * $(if ($small) { 0.20 } else { 0.24 })
+
+    foreach ($c in $cols) {
+        $x = $c.X * $S
+        $y = $c.Y * $S
+        $w = $side * $S
+        $path = New-RoundedPath $x $y $w $w ($radius * $S)
+        $b = New-Object System.Drawing.SolidBrush((New-Color $c.C))
+        $G.FillPath($b, $path)
+        $b.Dispose()
+        $path.Dispose()
+    }
+
+    # 宫格中间一道细分隔，让四个块读作「一份可选的清单」而不是散点
+    if (-not $small) {
+        $sep = New-Object System.Drawing.Pen(([System.Drawing.Color]::FromArgb(70, 255, 255, 255)), [single][Math]::Max(1.0, $S * 0.010))
+        $mid = 0.520 * $S
+        $G.DrawLine($sep, [single](0.235 * $S), [single]$mid, [single](0.765 * $S), [single]$mid)
+        $G.DrawLine($sep, [single]$mid, [single](0.235 * $S), [single]$mid, [single](0.765 * $S))
+        $sep.Dispose()
+    }
+}
+
+# ---------------------------------------------------------------------------
 # 渲染一个尺寸 → PNG 字节（4 倍超采样后缩小，小尺寸也不糊）
 # ---------------------------------------------------------------------------
 function Render-Png {
@@ -291,12 +348,16 @@ function Write-Ico {
 
 Write-Ico -Path (Join-Path $OutDir 'dsh-stock.ico') -Dims $Sizes -Painter { param($g, $s) Draw-Stock -G $g -S $s }
 Write-Ico -Path (Join-Path $OutDir 'dsh-study.ico') -Dims $Sizes -Painter { param($g, $s) Draw-Study -G $g -S $s }
+Write-Ico -Path (Join-Path $OutDir 'dsh-panel.ico') -Dims $Sizes -Painter { param($g, $s) Draw-Panel -G $g -S $s }
 
 # 预览图（256 与 32）
-foreach ($p in @(@('stock', 256), @('stock', 32), @('study', 256), @('study', 32))) {
+foreach ($p in @(@('stock', 256), @('stock', 32), @('study', 256), @('study', 32), @('panel', 256), @('panel', 32))) {
     $name = $p[0]; $sz = $p[1]
-    $bytes = if ($name -eq 'stock') { Render-Png -Size $sz -Painter { param($g, $s) Draw-Stock -G $g -S $s } }
-             else { Render-Png -Size $sz -Painter { param($g, $s) Draw-Study -G $g -S $s } }
+    $bytes = switch ($name) {
+        'stock' { Render-Png -Size $sz -Painter { param($g, $s) Draw-Stock -G $g -S $s } }
+        'study' { Render-Png -Size $sz -Painter { param($g, $s) Draw-Study -G $g -S $s } }
+        default { Render-Png -Size $sz -Painter { param($g, $s) Draw-Panel -G $g -S $s } }
+    }
     [System.IO.File]::WriteAllBytes((Join-Path $OutDir "preview-$name-$sz.png"), $bytes)
 }
 
