@@ -145,8 +145,16 @@ function Set-RowDisabled {
         $out.Add($line)
     }
     if (-not $done) {
+        # 新条目追加到文件末尾。
+        #
+        # 插入点 = 「最后一个非空行之后」。不要试图回退到所谓「最后一个顶层条目开始处」：
+        # 那样会退到上一个条目的 `- id:` 行，把新 id 插进它的 id 与 disabled 之间，
+        # 结果是 id 行堆在一起、disabled 行堆在一起（2026-11-08 实测把 7 个股票行写坏）。
+        #
+        # YAML 里顶层数组元素可以直接接在前一个元素的任意深度子块之后：
+        # 只要新行从第 0 列开始，解析器就会认为上一个元素结束、新元素开始。
         $at = $out.Count
-        if ($at -gt 0 -and $out[$at - 1] -eq '') { $at = $at - 1 }
+        while ($at -gt 0 -and $out[$at - 1] -match '^\s*$') { $at-- }      # 只跳过尾部空行
         $out.Insert($at, '  disabled: true')
         $out.Insert($at, "- id: $RowId")
     }
@@ -767,6 +775,47 @@ function Get-ModeRows {
 }
 
 # ---------------------------------------------------------------------------
+# 自愈：把 dsh.profile.bundles 对齐到 dependencies
+#
+#   为什么需要这一步：cordis.patch.yml 只能改写「bundles 展开出来的条目」。
+#   某个插件如果不在 bundles 里，补丁里给它写 disabled: true 就没有对象可关 ——
+#   文件看着是对的，实际什么都没发生。
+#
+#   dshmarket 卸载/重装插件时会把 bundles 整体改小（2026-11-08 实测从 13 项掉到 3 项，
+#   而且不生成 .bak 备份），插件包本身和 dependencies 都还在，于是模式切换静默失效。
+#   这里每次应用模式都按 dependencies 把 bundles 补齐，缺的就补回。
+# ---------------------------------------------------------------------------
+function Sync-BundleBaseline {
+    param([string[]]$Lines, $Catalog, [string[]]$KeepOut = @())
+
+    if (-not $Catalog) { return $Lines }
+    $joined = $Lines -join "`n"
+
+    # 从 package.json 文本里读 dependencies 的键（不整份 ConvertFrom-Json，
+    # 避免往返把中文与字段顺序写坏）
+    $deps = @()
+    $m = [regex]::Match($joined, '(?s)"dependencies"\s*:\s*\{(.*?)\n\s*\}')
+    if ($m.Success) {
+        $deps = @([regex]::Matches($m.Groups[1].Value, '"([^"]+)"\s*:') |
+            ForEach-Object { $_.Groups[1].Value })
+    }
+    if ($deps.Count -eq 0) { return $Lines }
+
+    $added = New-StringList
+    foreach ($pkg in $deps) {
+        if ($KeepOut -contains $pkg) { continue }
+        if (-not ($Catalog.packages.PSObject.Properties.Name -contains $pkg)) { continue }
+        $current = Get-BundleNames -Lines $Lines
+        if ($current -contains $pkg) { continue }
+        $Lines = Set-BundlePresent -Lines $Lines -Name $pkg -Present $true
+        [void]$added.Add($pkg)
+    }
+    if ($added.Count -gt 0) {
+        Write-DshLog 'bundles' ("自愈：补回 bundles = " + ($added.ToArray() -join ', '))
+    }
+    return $Lines
+}
+# ---------------------------------------------------------------------------
 # 应用模式：改 cordis.patch.yml / package.json / .dsh-market\state.json
 # 返回 { Changed = @(...), Mode = <mode 对象>, Skipped = @(...) }
 # ---------------------------------------------------------------------------
@@ -844,6 +893,11 @@ function Apply-DshMode {
     #   requireBundles = 这个模式下必须在 bundles 里的包（缺了就补回）
     #   removeBundles  = 这个模式下必须不在 bundles 里的包（在就摘掉）
     #   两者都不写就不动 package.json —— 绝大多数插件靠补丁行就能开关。
+    #
+    #   先做一次自愈：dshmarket 可能把 bundles 改小到补丁无法覆盖的地步，
+    #   这里按 dependencies 补齐（本模式要摘的包先排除，摘除逻辑在下面）。
+    $keepOut = @($mode.removeBundles | Where-Object { $_ })
+    $pkgLines = Sync-BundleBaseline -Lines $pkgLines -Catalog $Catalog -KeepOut $keepOut
     $currentBundles = Get-BundleNames -Lines $pkgLines
     $bundleRemoved = New-StringList
 
